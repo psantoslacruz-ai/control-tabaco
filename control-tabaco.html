@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Control de Tabaco</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{ --bg:#0b1020; --fg:#f8fafc; --muted:#94a3b8; --card:rgba(255,255,255,0.06); --card-border:rgba(255,255,255,0.12); --input-bg:#0f172a; --input-border:#334155; --accent:#facc15; --axis:#f8fafc; }
+    .theme-light{ --bg:#ffffff; --fg:#0f172a; --muted:#334155; --card:#f1f5f9; --card-border:#e2e8f0; --input-bg:#ffffff; --input-border:#cbd5e1; --accent:#0ea5e9; --axis:#0f172a; }
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:var(--fg)}
+    .card{background:var(--card);border-radius:1rem;padding:1rem;border:1px solid var(--card-border)}
+    .btn{transition:transform .05s ease}
+    .btn:active{transform:scale(.98)}
+    .highlight{font-size:2.75rem;font-weight:800;color:var(--accent)}
+    .label{font-size:0.85rem;color:var(--muted)}
+    .num{font-variant-numeric:tabular-nums}
+    .input{background:var(--input-bg);border:1px solid var(--input-border);color:var(--fg)}
+  </style>
+</head>
+<body class="min-h-full">
+  <div class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+    <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <h1 class="text-3xl font-extrabold tracking-tight">Control de Tabaco</h1>
+      <div class="flex gap-2">
+        <button id="toggleTheme" class="btn rounded-xl px-4 py-2 bg-slate-700 text-white">Modo claro/oscuro</button>
+        <button id="exportBtn" class="btn rounded-xl px-4 py-2 bg-slate-700 text-white">Exportar CSV</button>
+      </div>
+    </header>
+
+    <!-- Stats -->
+    <section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="card text-center"><p class="label">Hoy</p><p id="todayCount" class="highlight num">0</p><p id="sinceLast" class="text-xs" style="color:var(--muted)">—</p></div>
+      <div class="card text-center"><p class="label">Objetivo</p><p id="goalText" class="highlight num">—</p><p class="text-sm" style="color:var(--muted)">Restan <span id="remaining">—</span></p><div class="w-full bg-slate-700/60 rounded-full h-2 mt-2"><div id="goalBar" class="h-2 rounded-full bg-emerald-500" style="width:0%"></div></div></div>
+      <div class="card text-center"><p class="label">Coste mes</p><p id="costMonth" class="highlight num">€0</p></div>
+      <div class="card text-center"><p class="label">Racha</p><p id="streak" class="highlight num">0h</p></div>
+    </section>
+
+    <!-- Achievements -->
+    <section class="card">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-semibold">Logros / Insignias</h2>
+        <small class="label">Se otorgan al cerrar día</small>
+      </div>
+      <div id="badges" class="flex flex-wrap gap-2"></div>
+    </section>
+
+    <!-- Actions -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="card flex flex-col gap-4">
+        <h2 class="text-lg font-semibold">Registrar</h2>
+        <div class="grid grid-cols-2 gap-3">
+          <button id="smokeBtn" class="btn rounded-xl px-4 py-3 bg-red-500 text-black font-semibold">🚬 Fumé</button>
+          <button id="cravingBtn" class="btn rounded-xl px-4 py-3 bg-emerald-400 text-black font-semibold">💪 Resistido</button>
+        </div>
+        <textarea id="note" class="mt-2 w-full rounded-xl input p-3 text-sm" rows="2" placeholder="Nota opcional"></textarea>
+      </div>
+
+      <div class="card flex flex-col gap-3">
+        <h2 class="text-lg font-semibold">Ajustes</h2>
+        <label class="label">Objetivo<input id="goalInput" type="number" class="mt-1 w-full rounded-xl input p-2"/></label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="label">Precio €<input id="packPrice" type="number" step="0.01" class="mt-1 w-full rounded-xl input p-2"/></label>
+          <label class="label">Cigs/paquete<input id="cigsPerPack" type="number" class="mt-1 w-full rounded-xl input p-2"/></label>
+        </div>
+        <label class="label">Límite pausa<input id="urgeWindow" type="number" class="mt-1 w-full rounded-xl input p-2"/></label>
+        <button id="saveSettings" class="btn mt-2 rounded-xl px-4 py-2 bg-slate-700 text-white">Guardar ajustes</button>
+      </div>
+
+      <div class="card flex flex-col gap-4">
+        <h2 class="text-lg font-semibold">Fin de día</h2>
+        <p class="text-sm" style="color:var(--muted)">Pulsa al acabar la jornada para ver resumen y logros.</p>
+        <button id="closeDay" class="btn rounded-xl px-4 py-3 bg-blue-500 text-black font-semibold">📅 Cerrar día</button>
+      </div>
+    </section>
+
+    <!-- Charts -->
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="card"><h3 class="font-semibold mb-2">Últimos 7 días</h3><canvas id="weekChart" height="140"></canvas></div>
+      <div class="card"><h3 class="font-semibold mb-2">Este mes</h3><canvas id="monthChart" height="140"></canvas></div>
+    </section>
+
+    <!-- Log -->
+    <section class="card">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold">Historial</h2>
+        <div class="flex items-center gap-2 text-sm">
+          <label class="label">Filtrar<input id="filterDate" type="date" class="ml-2 rounded-lg input p-2" /></label>
+          <button id="clearFilter" class="btn rounded-lg px-3 py-2 bg-slate-700 text-white">Quitar filtro</button>
+        </div>
+      </div>
+      <div id="log" class="space-y-2 max-h-80 overflow-auto pr-2"></div>
+      <button id="clearAll" class="mt-4 btn rounded-xl px-4 py-2 bg-red-600 text-white font-semibold">Borrar todo</button>
+    </section>
+
+    <footer class="text-center text-xs" style="color:var(--muted)">Datos guardados localmente en tu dispositivo.</footer>
+  </div>
+
+<script>
+// ====== Utilidades ======
+const fmtDate=(d=new Date())=>d.toISOString().slice(0,10);
+const prettyTime=ts=>new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+const since=ts=>{ if(!ts) return '—'; const ms=Date.now()-ts; const m=Math.floor(ms/60000); const h=Math.floor(m/60); return h>0?`${h}h ${m%60}m`:`${m}m`; };
+function $(id){ return document.getElementById(id); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+
+// ====== Estado ======
+const STORAGE_KEY='smoke-tracker-v1';
+const defaultState={ entries:[], achievements:[], closedDays:{}, settings:{ theme:'dark', goal:10, packPrice:6, cigsPerPack:20, urgeWindow:10 } };
+let state;
+function load(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || structuredClone(defaultState);} catch{ return structuredClone(defaultState);} }
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+// ====== Inicio ======
+DocumentReady();
+function DocumentReady(){ document.addEventListener('DOMContentLoaded',()=>{ state=load(); applyTheme(); bindEvents(); render(); }); }
+
+function applyTheme(){ document.body.classList.toggle('theme-light', state.settings.theme==='light'); }
+
+function bindEvents(){
+  $('smokeBtn')?.addEventListener('click', ()=>addEntry('smoke'));
+  $('cravingBtn')?.addEventListener('click', ()=>addEntry('urge'));
+  $('saveSettings')?.addEventListener('click', saveSettings);
+  $('clearAll')?.addEventListener('click', clearAll);
+  $('exportBtn')?.addEventListener('click', exportCSV);
+  $('filterDate')?.addEventListener('change', renderLog);
+  $('clearFilter')?.addEventListener('click', ()=>{ const fd=$('filterDate'); if(fd){ fd.value=''; renderLog(); }});
+  $('toggleTheme')?.addEventListener('click', ()=>{ state.settings.theme = (state.settings.theme==='dark'?'light':'dark'); save(); applyTheme(); render(); });
+  $('closeDay')?.addEventListener('click', ()=>{ const res=closeDay(); if(res) showSummaryModal(res); });
+}
+
+// ====== Datos ======
+function addEntry(type){ state.entries.push({ts:Date.now(), type, note:($('note')?.value||'').trim()||undefined}); if($('note')) $('note').value=''; save(); render(); }
+function getTodayEntries(){ const today=fmtDate(); return state.entries.filter(e=>fmtDate(new Date(e.ts))===today); }
+function lastSmokeTs(){ const last=[...state.entries].reverse().find(e=>e.type==='smoke'); return last? last.ts : undefined; }
+function monthStats(){ const n=new Date(); const y=n.getFullYear(), m=n.getMonth(); const f=new Date(y,m,1).getTime(); const nx=new Date(y,m+1,1).getTime(); const arr=state.entries.filter(e=>e.type==='smoke' && e.ts>=f && e.ts<nx); return { total:arr.length, cost: arr.length*(state.settings.packPrice/state.settings.cigsPerPack) }; }
+
+// ====== Logros ======
+const BADGES={ hour1:{id:'hour1',label:'🕐 1h sin fumar'}, belowGoalToday:{id:'belowGoalToday',label:'🎯 Primer día por debajo del objetivo'} };
+function checkAchievements(){ const have=new Set(state.achievements); const last=lastSmokeTs(); if(last && (Date.now()-last)>=60*60000 && !have.has('hour1')){ state.achievements.push('hour1'); } }
+function renderBadges(){ const c=$('badges'); if(!c) return; c.innerHTML=''; const have=new Set(state.achievements); const list=Object.values(BADGES).filter(b=>have.has(b.id)); if(list.length===0){ c.innerHTML='<span class="text-sm" style="color:var(--muted)">Sin logros aún.</span>'; return; } list.forEach(b=>{ const tag=document.createElement('span'); tag.className='inline-flex items-center gap-2 text-sm px-3 py-1 rounded-full'; tag.style.background='var(--card)'; tag.style.border='1px solid var(--card-border)'; tag.textContent=b.label; c.appendChild(tag); }); }
+
+// ====== Render ======
+let weekChart, monthChart;
+function render(){
+  checkAchievements();
+  const todaySmokes=getTodayEntries().filter(e=>e.type==='smoke').length;
+  $('todayCount').textContent=todaySmokes;
+  const last=lastSmokeTs();
+  $('sinceLast').textContent= last?`Último: ${prettyTime(last)} (${since(last)})`:'Sin registros';
+  $('streak').textContent=since(last);
+  $('goalText').textContent=state.settings.goal;
+  $('remaining').textContent=Math.max(0,state.settings.goal-todaySmokes);
+  const pct=state.settings.goal?Math.min(100,Math.round((todaySmokes/state.settings.goal)*100)):0;
+  $('goalBar').style.width=`${pct}%`; $('goalBar').className=`h-2 rounded-full ${pct<70?'bg-emerald-500':pct<100?'bg-yellow-400':'bg-red-500'}`;
+  const ms=monthStats(); $('costMonth').textContent=`€${ms.cost.toFixed(2)}`;
+  $('goalInput').value=state.settings.goal; $('packPrice').value=state.settings.packPrice; $('cigsPerPack').value=state.settings.cigsPerPack; $('urgeWindow').value=state.settings.urgeWindow;
+  renderCharts(); renderLog(); renderBadges(); save();
+}
+
+function renderCharts(){
+  if(!window.Chart) return;
+  const axisColor=getComputedStyle(document.body).getPropertyValue('--axis').trim()||'#fff';
+  const data7=new Map(); for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); data7.set(fmtDate(d),0); }
+  state.entries.forEach(e=>{ const k=fmtDate(new Date(e.ts)); if(data7.has(k)&&e.type==='smoke') data7.set(k, data7.get(k)+1); });
+  if(weekChart) weekChart.destroy();
+  weekChart=new Chart($('weekChart').getContext('2d'), { type:'bar', data:{ labels:[...data7.keys()], datasets:[{ data:[...data7.values()], backgroundColor:'#f87171' }] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ ticks:{ color:axisColor }}} }});
+
+  const n=new Date(); const y=n.getFullYear(), m=n.getMonth(); const dim=new Date(y,m+1,0).getDate(); const mm=new Map();
+  for(let d=1; d<=dim; d++){ mm.set(`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`, 0); }
+  state.entries.forEach(e=>{ if(e.type==='smoke'){ const k=fmtDate(new Date(e.ts)); if(mm.has(k)) mm.set(k, mm.get(k)+1); } });
+  if(monthChart) monthChart.destroy();
+  monthChart=new Chart($('monthChart').getContext('2d'), { type:'line', data:{ labels:[...mm.keys()], datasets:[{ data:[...mm.values()], borderColor:'#60a5fa', tension:.3 }]}, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ display:false }}} });
+}
+
+function renderLog(){
+  const f=$('filterDate')?.value||'';
+  const items=[...state.entries].filter(e=>!f||fmtDate(new Date(e.ts))===f).sort((a,b)=>b.ts-a.ts);
+  const log=$('log'); if(!log) return; log.innerHTML='';
+  if(!items.length){ log.innerHTML='<p class="text-sm" style="color:var(--muted)">Sin registros.</p>'; return; }
+  items.forEach(e=>{
+    const div=document.createElement('div');
+    div.className='flex justify-between items-start rounded-lg p-3';
+    div.style.background='var(--input-bg)'; div.style.border='1px solid var(--input-border)';
+    div.innerHTML=`<div>
+      <p class="${e.type==='smoke'?'text-red-500':'text-emerald-400'} font-semibold">${e.type==='smoke'?'Cigarrillo':'Resistido'}</p>
+      <p class="text-xs" style="color:var(--muted)">${fmtDate(new Date(e.ts))} • ${prettyTime(e.ts)}</p>
+      ${e.note?`<p class='text-sm mt-1'>${escapeHtml(e.note)}</p>`:''}
+    </div>
+    <button class='btn text-xs px-2 py-1 rounded' style="background:var(--card);border:1px solid var(--card-border)">Borrar</button>`;
+    div.querySelector('button')?.addEventListener('click',()=>{ if(confirm('¿Borrar?')){ state.entries=state.entries.filter(x=>x.ts!==e.ts); save(); render(); } });
+    log.appendChild(div);
+  });
+}
+
+// ====== Export / Borrado total ======
+function exportCSV(){
+  const rows=[["fecha","hora","tipo","nota"]];
+  state.entries.forEach(e=>{ const d=new Date(e.ts); rows.push([ fmtDate(d), prettyTime(e.ts), e.type, (e.note||'').replace(/\n/g,' ') ]); });
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'\"')}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='control_tabaco.csv'; a.click(); URL.revokeObjectURL(url);
+}
+
+function clearAll(){
+  if(!confirm('¿Seguro de borrar todos los datos?')) return;
+  try{ localStorage.removeItem(STORAGE_KEY); }catch{}
+  state=structuredClone(defaultState); save();
+  if(weekChart){ try{weekChart.destroy();}catch{} }
+  if(monthChart){ try{monthChart.destroy();}catch{} }
+  render();
+}
+
+// ====== Cerrar día & resumen ======
+function summarizeToday(){
+  const today=fmtDate();
+  const items=state.entries.filter(e=>fmtDate(new Date(e.ts))===today);
+  const smokes=items.filter(e=>e.type==='smoke').length;
+  const urges=items.filter(e=>e.type==='urge').length;
+  const cost=smokes*(state.settings.packPrice/state.settings.cigsPerPack);
+  const belowGoal=smokes<state.settings.goal;
+  return {date:today, smokes, urges, cost:Number(cost.toFixed(2)), goal:state.settings.goal, belowGoal};
+}
+function closeDay(){
+  const sum=summarizeToday();
+  if(!state.closedDays) state.closedDays={};
+  state.closedDays[sum.date]=sum;
+  if(sum.belowGoal && !state.achievements.includes('belowGoalToday')){ state.achievements.push('belowGoalToday'); }
+  save(); renderBadges();
+  return sum;
+}
+function showSummaryModal(summary){
+  const box=document.createElement('div');
+  box.className='fixed inset-0 z-50 flex items-center justify-center';
+  box.innerHTML=`
+    <div class="absolute inset-0" style="background:rgba(0,0,0,.5)"></div>
+    <div class="relative card max-w-sm w-[92%]">
+      <h3 class="text-xl font-bold mb-2">Resumen del día (${summary.date})</h3>
+      <ul class="text-sm" style="color:var(--muted)">
+        <li>🚬 Cigarrillos: <strong style="color:var(--fg)">${summary.smokes}</strong></li>
+        <li>💪 Resistidos: <strong style="color:var(--fg)">${summary.urges}</strong></li>
+        <li>💶 Coste aprox.: <strong style="color:var(--fg)">€${summary.cost.toFixed(2)}</strong></li>
+        <li>🎯 Objetivo: <strong style="color:var(--fg)">${summary.goal}</strong> ${summary.belowGoal?'<span class="ml-1 text-emerald-400">(por debajo ✅)</span>':'<span class="ml-1 text-red-400">(por encima)</span>'}</li>
+      </ul>
+      <div class="flex justify-end gap-2 mt-4">
+        <button class="btn rounded-lg px-3 py-2 bg-slate-700 text-white" id="closeSummary">Cerrar</button>
+      </div>
+    </div>`;
+  box.addEventListener('click', (e)=>{ if(e.target===box || e.target.id==='closeSummary') box.remove(); });
+  document.body.appendChild(box);
+}
+
+// ====== Tests ======
+function createTestUI(){
+  const header=document.querySelector('header .flex.gap-2');
+  if(!header) return; if(document.getElementById('runTests')) return;
+  const btn=document.createElement('button'); btn.id='runTests'; btn.className='btn rounded-xl px-4 py-2 bg-slate-700 text-white'; btn.textContent='Ejecutar tests'; btn.title='Pruebas rápidas de la app'; btn.addEventListener('click', runSelfTests); header.appendChild(btn);
+}
+createTestUI();
+
+function runSelfTests(){
+  const results=[]; const ok=(name,cond)=>results.push(`${cond?'✔':'✘'} ${name}`);
+  try{
+    ok('DOM básico', ['smokeBtn','cravingBtn','goalInput','packPrice','cigsPerPack','urgeWindow','todayCount','weekChart','monthChart','log','closeDay'].every(id=>!!$(id)));
+    // add/remove
+    const before=getTodayEntries().filter(e=>e.type==='smoke').length;
+    const ts=Date.now(); state.entries.push({ts, type:'smoke', note:'[TEST]'}); save();
+    const mid=getTodayEntries().filter(e=>e.type==='smoke').length;
+    state.entries=state.entries.filter(e=>e.ts!==ts); save();
+    const after=getTodayEntries().filter(e=>e.type==='smoke').length;
+    ok('Añadir y revertir entrada', (mid===before+1)&&(after===before));
+    // export
+    let exportOk=true; try{ exportCSV(); }catch(e){ exportOk=false; } ok('Exportar CSV', exportOk);
+    // cierre de día
+    const backup=JSON.stringify(state);
+    try{
+      const goal=state.settings.goal; state.entries=state.entries.filter(e=>fmtDate(new Date(e.ts))!==fmtDate());
+      for(let i=0;i<Math.max(0,goal-1);i++){ state.entries.push({ts:Date.now()-i*1000, type:'smoke'}); }
+      save(); const res=closeDay(); ok('Cerrar día genera resumen', !!res && typeof res.smokes==='number'); ok('Logro belowGoalToday concedido', state.achievements.includes('belowGoalToday'));
+    } finally { state=JSON.parse(backup); save(); render(); }
+    // tema persistente
+    const prev=state.settings.theme; state.settings.theme='light'; save(); applyTheme(); ok('Tema: cambio a light', document.body.classList.contains('theme-light')); state.settings.theme=prev; save(); applyTheme();
+    // logro 1h
+    const backup2=JSON.stringify(state);
+    try{ state.entries.push({ts:Date.now()-120*60000, type:'smoke'}); checkAchievements(); ok('Logros: 1h sin fumar', state.achievements.includes('hour1')); } finally { state=JSON.parse(backup2); save(); }
+    // charts no lanzan
+    let chartsOk=true; try{ renderCharts(); }catch{ chartsOk=false; } ok('Gráficas: render sin error', chartsOk);
+  }catch(e){ results.push('✘ Error en tests: '+e.message); }
+  alert(results.join('\n'));
+}
+</script>
+</body>
+</html>
