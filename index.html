@@ -103,69 +103,42 @@
   </div>
 
 <script>
+(()=>{
+'use strict';
+
+// ================= Charts: declarar ANTES de cualquier uso (evita TDZ) =================
+/** @type {any|null} */ let weekChart = null;
+/** @type {any|null} */ let monthChart = null;
+
 // ================= Utilidades =================
 const fmtDate=(d=new Date())=>d.toISOString().slice(0,10);
 const prettyTime=ts=>new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
 const since=ts=>{ if(!ts) return '—'; const ms=Date.now()-ts; const m=Math.floor(ms/60000); const h=Math.floor(m/60); return h>0?`${h}h ${m%60}m`:`${m}m`; };
 const $=id=>document.getElementById(id);
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
+const ESC_MAP={"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"};
+const escapeHtml=s=>String(s).replace(/[&<>"']/g, ch=>ESC_MAP[ch]);
 const safeClone=o=>JSON.parse(JSON.stringify(o));
-
-// ================= Charts: declarar ANTES de cualquier uso (evita TDZ) =================
-let weekChart=null, monthChart=null; // <-- TDZ guardado
+const getCtx=id=>{ const c=$(id); return c&&c.getContext?c.getContext('2d'):null; };
 
 // ================= Estado (con saneado robusto) =================
 const STORAGE_KEY='smoke-tracker-v1';
-const defaultState={
-  entries:[],
-  achievements:[],
-  closedDays:{},
-  settings:{ theme:'dark', goal:10, packPrice:6, cigsPerPack:20, urgeWindow:10 }
-};
-
+const defaultState={ entries:[], achievements:[], closedDays:{}, settings:{ theme:'dark', goal:10, packPrice:6, cigsPerPack:20, urgeWindow:10 } };
 function ensureStateShape(s){
-  const d=defaultState;
-  const out=(s&&typeof s==='object')? s : {};
-  // entries
+  const d=defaultState; const out=(s&&typeof s==='object')? s : {};
   if(!Array.isArray(out.entries)) out.entries=[];
-  else out.entries = out.entries.filter(e=>e && typeof e==='object' && typeof e.ts==='number' && (e.type==='smoke'||e.type==='urge'));
-  // achievements
+  else out.entries = out.entries.filter(e=>e&&typeof e==='object'&&typeof e.ts==='number'&&(e.type==='smoke'||e.type==='urge'));
   if(!Array.isArray(out.achievements)) out.achievements=[];
-  // closedDays
-  if(!out.closedDays || typeof out.closedDays!=='object') out.closedDays={};
-  // settings
-  const st = (out.settings && typeof out.settings==='object') ? out.settings : {};
-  const num = (v,fb)=> Number.isFinite(v)? v : fb;
-  out.settings={
-    theme: st.theme==='light' ? 'light' : 'dark',
-    goal: num(parseInt(st.goal,10), d.settings.goal),
-    packPrice: num(parseFloat(st.packPrice), d.settings.packPrice),
-    cigsPerPack: num(parseInt(st.cigsPerPack,10), d.settings.cigsPerPack),
-    urgeWindow: num(parseInt(st.urgeWindow,10), d.settings.urgeWindow)
-  };
+  if(!out.closedDays||typeof out.closedDays!=='object') out.closedDays={};
+  const st=(out.settings&&typeof out.settings==='object')?out.settings:{}; const num=(v,fb)=>Number.isFinite(v)?v:fb;
+  out.settings={ theme: st.theme==='light'?'light':'dark', goal:num(parseInt(st.goal,10),d.settings.goal), packPrice:num(parseFloat(st.packPrice),d.settings.packPrice), cigsPerPack:num(parseInt(st.cigsPerPack,10),d.settings.cigsPerPack), urgeWindow:num(parseInt(st.urgeWindow,10),d.settings.urgeWindow)};
   return out;
 }
-
-function load(){
-  try{
-    const raw=localStorage.getItem(STORAGE_KEY);
-    if(!raw) return safeClone(defaultState);
-    const parsed=JSON.parse(raw);
-    return ensureStateShape(parsed);
-  }catch(e){
-    try{ localStorage.removeItem(STORAGE_KEY); }catch{}
-    return safeClone(defaultState);
-  }
-}
-
-let state = load();
-function save(){ state = ensureStateShape(state); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function load(){ try{ const raw=localStorage.getItem(STORAGE_KEY); if(!raw) return safeClone(defaultState); return ensureStateShape(JSON.parse(raw)); } catch{ try{localStorage.removeItem(STORAGE_KEY);}catch{} return safeClone(defaultState);} }
+let state=load();
+function save(){ state=ensureStateShape(state); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 // ================= Inicio =================
-applyTheme();
-bindEvents();
-render();
-
+window.addEventListener('DOMContentLoaded', ()=>{ applyTheme(); bindEvents(); render(); });
 function applyTheme(){ document.body.classList.toggle('theme-light', state.settings.theme==='light'); }
 
 function bindEvents(){
@@ -185,8 +158,8 @@ function bindEvents(){
 // ================= Datos =================
 function addEntry(type){ state.entries.push({ts:Date.now(), type, note:($('note')?.value||'').trim()||undefined}); if($('note')) $('note').value=''; save(); render(); }
 function getTodayEntries(){ const today=fmtDate(); return state.entries.filter(e=>fmtDate(new Date(e.ts))===today); }
-function lastSmokeTs(){ const last=[...state.entries].reverse().find(e=>e.type==='smoke'); return last? last.ts : undefined; }
-function monthStats(){ const n=new Date(); const y=n.getFullYear(), m=n.getMonth(); const f=new Date(y,m,1).getTime(); const nx=new Date(y,m+1,1).getTime(); const arr=state.entries.filter(e=>e.type==='smoke' && e.ts>=f && e.ts<nx); return { total:arr.length, cost: arr.length*(state.settings.packPrice/state.settings.cigsPerPack) }; }
+function lastSmokeTs(){ const last=[...state.entries].reverse().find(e=>e.type==='smoke'); return last?last.ts:undefined; }
+function monthStats(){ const n=new Date(); const y=n.getFullYear(), m=n.getMonth(); const f=new Date(y,m,1).getTime(); const nx=new Date(y,m+1,1).getTime(); const arr=state.entries.filter(e=>e.type==='smoke'&&e.ts>=f&&e.ts<nx); return { total:arr.length, cost: arr.length*(state.settings.packPrice/state.settings.cigsPerPack) }; }
 
 // ================= Ajustes =================
 function saveSettings(){
@@ -204,12 +177,7 @@ function saveSettings(){
 
 // ================= Logros =================
 const BADGES={ hour1:{id:'hour1',label:'🕐 1h sin fumar'}, belowGoalToday:{id:'belowGoalToday',label:'🎯 Primer día por debajo del objetivo'} };
-function checkAchievements(){
-  if(!Array.isArray(state.achievements)) state.achievements=[]; // robustez
-  const have=new Set(state.achievements);
-  const last=lastSmokeTs();
-  if(last && (Date.now()-last)>=60*60000 && !have.has('hour1')){ state.achievements.push('hour1'); }
-}
+function checkAchievements(){ if(!Array.isArray(state.achievements)) state.achievements=[]; const have=new Set(state.achievements); const last=lastSmokeTs(); if(last&&(Date.now()-last)>=60*60000&&!have.has('hour1')){ state.achievements.push('hour1'); } }
 function renderBadges(){ const c=$('badges'); if(!c) return; c.innerHTML=''; const have=new Set(state.achievements||[]); const list=Object.values(BADGES).filter(b=>have.has(b.id)); if(list.length===0){ c.innerHTML='<span class="text-sm" style="color:var(--muted)">Sin logros aún.</span>'; return; } list.forEach(b=>{ const tag=document.createElement('span'); tag.className='inline-flex items-center gap-2 text-sm px-3 py-1 rounded-full'; tag.style.background='var(--card)'; tag.style.border='1px solid var(--card-border)'; tag.textContent=b.label; c.appendChild(tag); }); }
 
 // ================= Render =================
@@ -217,11 +185,9 @@ function render(){
   checkAchievements();
   const todaySmokes=getTodayEntries().filter(e=>e.type==='smoke').length;
   $('todayCount').textContent=todaySmokes;
-  const last=lastSmokeTs();
-  $('sinceLast').textContent= last?`Último: ${prettyTime(last)} (${since(last)})`:'Sin registros';
+  const last=lastSmokeTs(); $('sinceLast').textContent= last?`Último: ${prettyTime(last)} (${since(last)})`:'Sin registros';
   $('streak').textContent=since(last);
-  $('goalText').textContent=state.settings.goal;
-  $('remaining').textContent=Math.max(0,state.settings.goal-todaySmokes);
+  $('goalText').textContent=state.settings.goal; $('remaining').textContent=Math.max(0,state.settings.goal-todaySmokes);
   const pct=state.settings.goal?Math.min(100,Math.round((todaySmokes/state.settings.goal)*100)):0;
   $('goalBar').style.width=`${pct}%`; $('goalBar').className=`h-2 rounded-full ${pct<70?'bg-emerald-500':pct<100?'bg-yellow-400':'bg-red-500'}`;
   const ms=monthStats(); $('costMonth').textContent=`€${ms.cost.toFixed(2)}`;
@@ -229,25 +195,23 @@ function render(){
   renderCharts(); renderLog(); renderBadges(); save();
 }
 
-function getCtx(id){ const c=$(id); return c && c.getContext ? c.getContext('2d') : null; }
-
 function renderCharts(){
-  if(!window.Chart) return;
+  if(!window.Chart) return; // CDN no cargado aún
   const axisColor=getComputedStyle(document.body).getPropertyValue('--axis').trim()||'#fff';
   const wctx=getCtx('weekChart'); const mctx=getCtx('monthChart'); if(!wctx||!mctx) return; // canvas aún no listo
 
   // Semana (7 días)
   const data7=new Map(); for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); data7.set(fmtDate(d),0); }
   state.entries.forEach(e=>{ const k=fmtDate(new Date(e.ts)); if(data7.has(k)&&e.type==='smoke') data7.set(k, data7.get(k)+1); });
-  if(weekChart && typeof weekChart.destroy==='function'){ try{ weekChart.destroy(); }catch{} }
-  weekChart=new Chart(wctx, { type:'bar', data:{ labels:[...data7.keys()], datasets:[{ data:[...data7.values()], backgroundColor:'#f87171' }] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ ticks:{ color:axisColor }}} }});
+  if(weekChart&&typeof weekChart.destroy==='function'){ try{ weekChart.destroy(); }catch{} }
+  weekChart=new Chart(wctx,{ type:'bar', data:{ labels:[...data7.keys()], datasets:[{ data:[...data7.values()], backgroundColor:'#f87171' }] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ ticks:{ color:axisColor }}} }});
 
   // Mes actual (línea)
   const n=new Date(); const y=n.getFullYear(), m=n.getMonth(); const dim=new Date(y,m+1,0).getDate(); const mm=new Map();
   for(let d=1; d<=dim; d++){ mm.set(`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`, 0); }
   state.entries.forEach(e=>{ if(e.type==='smoke'){ const k=fmtDate(new Date(e.ts)); if(mm.has(k)) mm.set(k, mm.get(k)+1); } });
-  if(monthChart && typeof monthChart.destroy==='function'){ try{ monthChart.destroy(); }catch{} }
-  monthChart=new Chart(mctx, { type:'line', data:{ labels:[...mm.keys()], datasets:[{ data:[...mm.values()], borderColor:'#60a5fa', tension:.3 }]}, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ display:false }}} });
+  if(monthChart&&typeof monthChart.destroy==='function'){ try{ monthChart.destroy(); }catch{} }
+  monthChart=new Chart(mctx,{ type:'line', data:{ labels:[...mm.keys()], datasets:[{ data:[...mm.values()], borderColor:'#60a5fa', tension:.3 }]}, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ display:false }}} });
 }
 
 function renderLog(){
@@ -275,7 +239,7 @@ function renderLog(){
 function exportCSV(){
   const rows=[["fecha","hora","tipo","nota"]];
   state.entries.forEach(e=>{ const d=new Date(e.ts); rows.push([ fmtDate(d), prettyTime(e.ts), e.type, (e.note||'').replace(/\n/g,' ') ]); });
-  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'\"')}"`).join(',')).join('\n');
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'\\"')}"`).join(',')).join('\n');
   const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='control_tabaco.csv'; a.click(); URL.revokeObjectURL(url);
 }
 
@@ -283,8 +247,8 @@ function clearAll(){
   if(!confirm('¿Seguro de borrar todos los datos?')) return;
   try{ localStorage.removeItem(STORAGE_KEY); }catch{}
   state=safeClone(defaultState); save();
-  if(weekChart && typeof weekChart.destroy==='function'){ try{weekChart.destroy();}catch{} }
-  if(monthChart && typeof monthChart.destroy==='function'){ try{monthChart.destroy();}catch{} }
+  if(weekChart&&typeof weekChart.destroy==='function'){ try{weekChart.destroy();}catch{} }
+  if(monthChart&&typeof monthChart.destroy==='function'){ try{monthChart.destroy();}catch{} }
   render();
 }
 
@@ -300,10 +264,10 @@ function summarizeToday(){
 }
 function closeDay(){
   const sum=summarizeToday();
-  if(!state.closedDays || typeof state.closedDays!=='object') state.closedDays={};
+  if(!state.closedDays||typeof state.closedDays!=='object') state.closedDays={};
   if(!Array.isArray(state.achievements)) state.achievements=[];
   state.closedDays[sum.date]=sum;
-  if(sum.belowGoal && !state.achievements.includes('belowGoalToday')){ state.achievements.push('belowGoalToday'); }
+  if(sum.belowGoal&&!state.achievements.includes('belowGoalToday')){ state.achievements.push('belowGoalToday'); }
   save(); renderBadges();
   return sum;
 }
@@ -324,7 +288,7 @@ function showSummaryModal(summary){
         <button class=\"btn rounded-lg px-3 py-2 bg-slate-700 text-white\" id=\"closeSummary\">Cerrar</button>
       </div>
     </div>`;
-  box.addEventListener('click', (e)=>{ if(e.target===box || e.target.id==='closeSummary') box.remove(); });
+  box.addEventListener('click',(e)=>{ if(e.target===box||e.target.id==='closeSummary') box.remove(); });
   document.body.appendChild(box);
 }
 
@@ -334,51 +298,37 @@ function runSelfTests(){
   try{
     ok('DOM básico', ['smokeBtn','cravingBtn','goalInput','packPrice','cigsPerPack','urgeWindow','todayCount','weekChart','monthChart','log','closeDay'].every(id=>!!$(id)));
 
-    // Estado: shape garantizado
-    let stateOk=true; try{ const s=ensureStateShape({}); stateOk = Array.isArray(s.entries)&&Array.isArray(s.achievements)&&s.settings&&typeof s.settings.goal==='number'; }catch{ stateOk=false; }
+    let stateOk=true; try{ const s=ensureStateShape({}); stateOk=Array.isArray(s.entries)&&Array.isArray(s.achievements)&&s.settings&&typeof s.settings.goal==='number'; }catch{ stateOk=false; }
     ok('Estado mínimo válido (ensureStateShape)', stateOk);
 
-    // TDZ charts (acceso no lanza)
-    const tdzOk = (()=>{ try { void weekChart; void monthChart; return true; } catch { return false; } })();
+    const tdzOk = (()=>{ try{ void weekChart; void monthChart; return true; }catch{ return false; } })();
     ok('Charts: sin TDZ (variables accesibles)', tdzOk);
 
-    // add/revert
-    const before=getTodayEntries().filter(e=>e.type==='smoke').length;
-    const ts=Date.now(); state.entries.push({ts, type:'smoke', note:'[TEST]'}); save();
-    const mid=getTodayEntries().filter(e=>e.type==='smoke').length;
-    state.entries=state.entries.filter(e=>e.ts!==ts); save();
-    const after=getTodayEntries().filter(e=>e.type==='smoke').length;
-    ok('Añadir y revertir entrada', (mid===before+1)&&(after===before));
+    const before=getTodayEntries().filter(e=>e.type==='smoke').length; const ts=Date.now(); state.entries.push({ts, type:'smoke', note:'[TEST]'}); save(); const mid=getTodayEntries().filter(e=>e.type==='smoke').length; state.entries=state.entries.filter(e=>e.ts!==ts); save(); const after=getTodayEntries().filter(e=>e.type==='smoke').length; ok('Añadir y revertir entrada', (mid===before+1)&&(after===before));
 
-    // export
-    let exportOk=true; try{ exportCSV(); }catch(e){ exportOk=false; } ok('Exportar CSV', exportOk);
+    let exportOk=true; try{ exportCSV(); }catch{ exportOk=false; } ok('Exportar CSV', exportOk);
 
-    // cierre de día
     const backup=JSON.stringify(state);
     try{
-      const goal=state.settings.goal; state.entries=state.entries.filter(e=>fmtDate(new Date(e.ts))!==fmtDate());
-      for(let i=0;i<Math.max(0,goal-1);i++){ state.entries.push({ts:Date.now()-i*1000, type:'smoke'}); }
+      const goal=state.settings.goal; state.entries=state.entries.filter(e=>fmtDate(new Date(e.ts))!==fmtDate()); for(let i=0;i<Math.max(0,goal-1);i++){ state.entries.push({ts:Date.now()-i*1000, type:'smoke'}); }
       save(); const res=closeDay(); ok('Cerrar día genera resumen', !!res && typeof res.smokes==='number'); ok('Logro belowGoalToday concedido', state.achievements.includes('belowGoalToday'));
     } finally { state=JSON.parse(backup); save(); render(); }
 
-    // tema persistente
     const prev=state.settings.theme; state.settings.theme='light'; save(); applyTheme(); ok('Tema: cambio a light', document.body.classList.contains('theme-light')); state.settings.theme=prev; save(); applyTheme();
 
-    // logro 1h (tolerante a achievements faltante)
     const backup2=JSON.stringify(state);
     try{ delete state.achievements; state.entries.push({ts:Date.now()-120*60000, type:'smoke'}); let noThrow=true; try{ checkAchievements(); }catch{ noThrow=false; } ok('Logros: checkAchievements tolera achievements inexistente', noThrow); ok('Logros: 1h sin fumar', Array.isArray(state.achievements) && state.achievements.includes('hour1')); } finally { state=JSON.parse(backup2); save(); }
 
-    // gráficas render
     let chartsOk=true; try{ renderCharts(); }catch{ chartsOk=false; } ok('Gráficas: render sin error', chartsOk);
 
-    // Recupera de localStorage corrupto
     const raw=localStorage.getItem(STORAGE_KEY);
-    try{ localStorage.setItem(STORAGE_KEY,'null'); const s2=load(); ok('Recupera de localStorage corrupto', Array.isArray(s2.achievements) && s2.settings && typeof s2.settings.goal==='number'); }
+    try{ localStorage.setItem(STORAGE_KEY,'null'); const s2=load(); ok('Recupera de localStorage corrupto', Array.isArray(s2.achievements)&&s2.settings&&typeof s2.settings.goal==='number'); }
     finally{ if(raw==null) localStorage.removeItem(STORAGE_KEY); else localStorage.setItem(STORAGE_KEY, raw); state=load(); save(); }
-
   }catch(e){ results.push('✘ Error en tests: '+e.message); }
   alert(results.join('\n'));
 }
+
+})();
 </script>
 </body>
 </html>
