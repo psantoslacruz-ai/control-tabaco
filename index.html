@@ -108,8 +108,11 @@ const fmtDate=(d=new Date())=>d.toISOString().slice(0,10);
 const prettyTime=ts=>new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
 const since=ts=>{ if(!ts) return '—'; const ms=Date.now()-ts; const m=Math.floor(ms/60000); const h=Math.floor(m/60); return h>0?`${h}h ${m%60}m`:`${m}m`; };
 const $=id=>document.getElementById(id);
-const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
 const safeClone=o=>JSON.parse(JSON.stringify(o));
+
+// ================= Charts: declarar ANTES de cualquier uso (evita TDZ) =================
+let weekChart=null, monthChart=null; // <-- TDZ guardado
 
 // ================= Estado (con saneado robusto) =================
 const STORAGE_KEY='smoke-tracker-v1';
@@ -202,7 +205,7 @@ function saveSettings(){
 // ================= Logros =================
 const BADGES={ hour1:{id:'hour1',label:'🕐 1h sin fumar'}, belowGoalToday:{id:'belowGoalToday',label:'🎯 Primer día por debajo del objetivo'} };
 function checkAchievements(){
-  if(!Array.isArray(state.achievements)) state.achievements=[]; // <== robustez ante estado corrupto
+  if(!Array.isArray(state.achievements)) state.achievements=[]; // robustez
   const have=new Set(state.achievements);
   const last=lastSmokeTs();
   if(last && (Date.now()-last)>=60*60000 && !have.has('hour1')){ state.achievements.push('hour1'); }
@@ -210,7 +213,6 @@ function checkAchievements(){
 function renderBadges(){ const c=$('badges'); if(!c) return; c.innerHTML=''; const have=new Set(state.achievements||[]); const list=Object.values(BADGES).filter(b=>have.has(b.id)); if(list.length===0){ c.innerHTML='<span class="text-sm" style="color:var(--muted)">Sin logros aún.</span>'; return; } list.forEach(b=>{ const tag=document.createElement('span'); tag.className='inline-flex items-center gap-2 text-sm px-3 py-1 rounded-full'; tag.style.background='var(--card)'; tag.style.border='1px solid var(--card-border)'; tag.textContent=b.label; c.appendChild(tag); }); }
 
 // ================= Render =================
-let weekChart, monthChart;
 function render(){
   checkAchievements();
   const todaySmokes=getTodayEntries().filter(e=>e.type==='smoke').length;
@@ -227,20 +229,25 @@ function render(){
   renderCharts(); renderLog(); renderBadges(); save();
 }
 
+function getCtx(id){ const c=$(id); return c && c.getContext ? c.getContext('2d') : null; }
+
 function renderCharts(){
   if(!window.Chart) return;
   const axisColor=getComputedStyle(document.body).getPropertyValue('--axis').trim()||'#fff';
+  const wctx=getCtx('weekChart'); const mctx=getCtx('monthChart'); if(!wctx||!mctx) return; // canvas aún no listo
+
   // Semana (7 días)
   const data7=new Map(); for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); data7.set(fmtDate(d),0); }
   state.entries.forEach(e=>{ const k=fmtDate(new Date(e.ts)); if(data7.has(k)&&e.type==='smoke') data7.set(k, data7.get(k)+1); });
-  if(weekChart) weekChart.destroy();
-  weekChart=new Chart($('weekChart').getContext('2d'), { type:'bar', data:{ labels:[...data7.keys()], datasets:[{ data:[...data7.values()], backgroundColor:'#f87171' }] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ ticks:{ color:axisColor }}} }});
+  if(weekChart && typeof weekChart.destroy==='function'){ try{ weekChart.destroy(); }catch{} }
+  weekChart=new Chart(wctx, { type:'bar', data:{ labels:[...data7.keys()], datasets:[{ data:[...data7.values()], backgroundColor:'#f87171' }] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ ticks:{ color:axisColor }}} }});
+
   // Mes actual (línea)
   const n=new Date(); const y=n.getFullYear(), m=n.getMonth(); const dim=new Date(y,m+1,0).getDate(); const mm=new Map();
   for(let d=1; d<=dim; d++){ mm.set(`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`, 0); }
   state.entries.forEach(e=>{ if(e.type==='smoke'){ const k=fmtDate(new Date(e.ts)); if(mm.has(k)) mm.set(k, mm.get(k)+1); } });
-  if(monthChart) monthChart.destroy();
-  monthChart=new Chart($('monthChart').getContext('2d'), { type:'line', data:{ labels:[...mm.keys()], datasets:[{ data:[...mm.values()], borderColor:'#60a5fa', tension:.3 }]}, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ display:false }}} });
+  if(monthChart && typeof monthChart.destroy==='function'){ try{ monthChart.destroy(); }catch{} }
+  monthChart=new Chart(mctx, { type:'line', data:{ labels:[...mm.keys()], datasets:[{ data:[...mm.values()], borderColor:'#60a5fa', tension:.3 }]}, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ color:axisColor }}, x:{ display:false }}} });
 }
 
 function renderLog(){
@@ -276,8 +283,8 @@ function clearAll(){
   if(!confirm('¿Seguro de borrar todos los datos?')) return;
   try{ localStorage.removeItem(STORAGE_KEY); }catch{}
   state=safeClone(defaultState); save();
-  if(weekChart){ try{weekChart.destroy();}catch{} }
-  if(monthChart){ try{monthChart.destroy();}catch{} }
+  if(weekChart && typeof weekChart.destroy==='function'){ try{weekChart.destroy();}catch{} }
+  if(monthChart && typeof monthChart.destroy==='function'){ try{monthChart.destroy();}catch{} }
   render();
 }
 
@@ -330,6 +337,10 @@ function runSelfTests(){
     // Estado: shape garantizado
     let stateOk=true; try{ const s=ensureStateShape({}); stateOk = Array.isArray(s.entries)&&Array.isArray(s.achievements)&&s.settings&&typeof s.settings.goal==='number'; }catch{ stateOk=false; }
     ok('Estado mínimo válido (ensureStateShape)', stateOk);
+
+    // TDZ charts (acceso no lanza)
+    const tdzOk = (()=>{ try { void weekChart; void monthChart; return true; } catch { return false; } })();
+    ok('Charts: sin TDZ (variables accesibles)', tdzOk);
 
     // add/revert
     const before=getTodayEntries().filter(e=>e.type==='smoke').length;
