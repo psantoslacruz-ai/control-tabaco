@@ -130,7 +130,7 @@ function bindEvents(){
   addEv('clearAll', clearAll);
   addEv('exportBtn', exportCSV);
   $('filterDate')?.addEventListener('change', renderLog);
-  addEv('clearFilter', ()=>{ const fd=$('filterDate'); if(fd){ fd.value=''; renderLog(); }}});
+  addEv('clearFilter', ()=>{ const fd=$('filterDate'); if(fd){ fd.value=''; renderLog(); }});
   addEv('toggleTheme', ()=>{ state.settings.theme = (state.settings.theme==='dark'?'light':'dark'); save(); applyTheme(); render(); });
   addEv('closeDay', ()=>{ const res=closeDay(); if(res) showSummaryModal(res); });
 }
@@ -183,3 +183,4 @@ function render(){
 </script>
 </body>
 </html>
+
